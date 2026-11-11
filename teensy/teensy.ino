@@ -1,175 +1,111 @@
 
-/*
-  SMART ANTI-THEFT BOX V4
-  Controller: Teensy 4.1
-
-  Reed Switch  -> Pin 2
-  Shock Sensor -> Pin 3
-  LED          -> Pin 13
-
-  Alarm remains ON while an event is active.
-  Alarm turns OFF 4 seconds after all events stop.
-*/
-
 const int REED_PIN = 2;
 const int SHOCK_PIN = 3;
+const int TILT_PIN = 4;
 const int LED_PIN = 13;
 
-const unsigned long debounceDelay = 50;
 const unsigned long alarmOffDelay = 4000;
+const unsigned long debounceDelay = 50;
 
-int reedState = HIGH;
-int lastReedReading = HIGH;
-
+int reedState = LOW;
 int shockState = HIGH;
-int lastShockReading = HIGH;
+int tiltState = HIGH;
 
-unsigned long lastReedDebounce = 0;
-unsigned long lastShockDebounce = 0;
+int lastReed = LOW;
+int lastShock = HIGH;
+int lastTilt = HIGH;
+
+unsigned long reedTimer = 0;
+unsigned long shockTimer = 0;
+unsigned long tiltTimer = 0;
 
 unsigned long lastEventTime = 0;
 
 bool alarmActive = false;
 
 void setup() {
-
   Serial.begin(115200);
 
   pinMode(REED_PIN, INPUT);
   pinMode(SHOCK_PIN, INPUT);
-  pinMode(LED_PIN, OUTPUT);
+  pinMode(TILT_PIN, INPUT);
 
+  pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LOW);
 
-  Serial.println("============================");
-  Serial.println(" SMART ANTI-THEFT BOX V4");
-  Serial.println("============================");
-
-  Serial.println("System ready.");
-
+  Serial.println("SMART ANTI-THEFT BOX V6");
 }
 
 void loop() {
+  unsigned long now = millis();
 
-  checkReedSensor();
-  checkShockSensor();
+  // REED
+  int r = digitalRead(REED_PIN);
 
-  // Check if an event is still active
-  bool reedTriggered = (reedState == HIGH);
+  if (r != lastReed) {
+    lastReed = r;
+    reedTimer = now;
+  }
 
-  // Shock sensor is an impulse sensor:
-  // a detected shock refreshes lastEventTime.
+  if (now - reedTimer >= debounceDelay && r != reedState) {
+    reedState = r;
 
-  bool eventActive = reedTriggered;
+    if (reedState == HIGH) {
+      alarmActive = true;
+      lastEventTime = now;
+      Serial.println("BOX OPENED!");
+    }
+  }
 
-  // Alarm turns off only after 4 seconds
-  // without any detected event.
+  // SHOCK
+  int s = digitalRead(SHOCK_PIN);
 
+  if (s != lastShock) {
+    lastShock = s;
+    shockTimer = now;
+  }
+
+  if (now - shockTimer >= debounceDelay && s != shockState) {
+    shockState = s;
+
+    if (shockState == LOW) {
+      alarmActive = true;
+      lastEventTime = now;
+      Serial.println("SHOCK DETECTED!");
+    }
+  }
+
+  // TILT
+  int t = digitalRead(TILT_PIN);
+
+  if (t != lastTilt) {
+    lastTilt = t;
+    tiltTimer = now;
+  }
+
+  if (now - tiltTimer >= debounceDelay && t != tiltState) {
+    tiltState = t;
+
+    if (tiltState == LOW) {
+      alarmActive = true;
+      lastEventTime = now;
+      Serial.println("TILT DETECTED!");
+    }
+  }
+
+  // ALARM
+  bool eventActive = (reedState == HIGH) || (tiltState == LOW);
+
+  if (alarmActive && !eventActive &&
+      now - lastEventTime >= alarmOffDelay) {
+    alarmActive = false;
+    Serial.println("ALARM OFF");
+  }
+
+  // LED
   if (alarmActive) {
-
-    if (eventActive) {
-
-      lastEventTime = millis();
-
-    }
-
-    if (millis() - lastEventTime >= alarmOffDelay
-        && !eventActive) {
-
-      alarmActive = false;
-
-      Serial.println("[SYSTEM] Alarm stopped.");
-
-    }
-
+    digitalWrite(LED_PIN, HIGH);
+  } else {
+    digitalWrite(LED_PIN, LOW);
   }
-
-  digitalWrite(LED_PIN, alarmActive ? HIGH : LOW);
-
-}
-
-// =================================
-// ACTIVATE / REFRESH ALARM
-// =================================
-
-void activateAlarm() {
-
-  if (!alarmActive) {
-    Serial.println("[ALARM] Alarm activated!");
-  }
-
-  alarmActive = true;
-  lastEventTime = millis();
-
-}
-
-// =================================
-// REED SWITCH
-// =================================
-
-void checkReedSensor() {
-
-  int reading = digitalRead(REED_PIN);
-
-  if (reading != lastReedReading) {
-    lastReedDebounce = millis();
-  }
-
-  if (millis() - lastReedDebounce > debounceDelay) {
-
-    if (reading != reedState) {
-
-      reedState = reading;
-
-      if (reedState == LOW) {
-
-        Serial.println("[REED] BOX CLOSED");
-
-      } else {
-
-        Serial.println("[ALARM] BOX OPENED!");
-        activateAlarm();
-
-      }
-
-    }
-
-  }
-
-  lastReedReading = reading;
-
-}
-
-// =================================
-// SHOCK SENSOR
-// =================================
-
-void checkShockSensor() {
-
-  int reading = digitalRead(SHOCK_PIN);
-
-  if (reading != lastShockReading) {
-    lastShockDebounce = millis();
-  }
-
-  if (millis() - lastShockDebounce > debounceDelay) {
-
-    if (reading != shockState) {
-
-      shockState = reading;
-
-      if (shockState == LOW) {
-
-        Serial.println("[ALARM] SHOCK DETECTED!");
-
-        activateAlarm();
-
-      }
-
-    }
-
-  }
-
-  lastShockReading = reading;
-
 }
